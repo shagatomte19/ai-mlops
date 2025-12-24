@@ -1,5 +1,4 @@
 from fastapi import FastAPI, HTTPException
-# Force reload for model update
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import joblib
@@ -9,9 +8,8 @@ from database import get_db_connection, init_db
 from datetime import datetime
 from contextlib import asynccontextmanager
 
-# Load models
-MODEL_FILE = "sentiment_v1.pkl"
-VECTORIZER_FILE = "vectorizer_v1.pkl"
+MODEL_FILE = 'sentiment_v1.pkl'
+VECTORIZER_FILE = 'vectorizer_v1.pkl'
 
 model = None
 vectorizer = None
@@ -19,29 +17,23 @@ vectorizer = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global model, vectorizer
-    # Load ML artifacts
     if os.path.exists(MODEL_FILE) and os.path.exists(VECTORIZER_FILE):
         model = joblib.load(MODEL_FILE)
         vectorizer = joblib.load(VECTORIZER_FILE)
-        print("Models loaded successfully.")
+        print('Models loaded successfully.')
     else:
-        print("Warning: Model files not found. Train model first.")
-    
-    # Init DB
+        print('Warning: Model files not found. Train model first.')
     init_db()
-    
     yield
-    # Cleanup if needed
 
 app = FastAPI(lifespan=lifespan)
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=['*'],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=['*'],
+    allow_headers=['*'],
 )
 
 class AnalysisRequest(BaseModel):
@@ -54,30 +46,28 @@ class AnalysisResponse(BaseModel):
     negative_score: float
     timestamp: str
 
-@app.get("/api/health")
+@app.get('/api/health')
 def health_check():
-    return {"status": "ok", "model_loaded": model is not None}
+    return {'status': 'ok', 'model_loaded': model is not None}
 
-@app.post("/api/predict", response_model=AnalysisResponse)
+@app.post('/api/predict', response_model=AnalysisResponse)
 def predict_sentiment(request: AnalysisRequest):
     if not model or not vectorizer:
-        raise HTTPException(status_code=503, detail="Model not loaded")
+        raise HTTPException(status_code=503, detail='Model not loaded')
     
     if not request.text.strip():
-        raise HTTPException(status_code=400, detail="Text cannot be empty")
+        raise HTTPException(status_code=400, detail='Text cannot be empty')
 
-    # Predict
     text_vec = vectorizer.transform([request.text])
-    prediction = model.predict(text_vec)[0] # 0 or 1
-    probs = model.predict_proba(text_vec)[0] # [neg_prob, pos_prob]
+    prediction = model.predict(text_vec)[0]
+    probs = model.predict_proba(text_vec)[0]
     
-    sentiment = "positive" if prediction == 1 else "negative"
+    sentiment = 'positive' if prediction == 1 else 'negative'
     negative_score = float(probs[0])
     positive_score = float(probs[1])
     confidence = max(positive_score, negative_score)
     timestamp = datetime.now().isoformat()
     
-    # Save to DB
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
@@ -88,46 +78,40 @@ def predict_sentiment(request: AnalysisRequest):
     conn.close()
     
     return {
-        "sentiment": sentiment,
-        "confidence": confidence,
-        "positive_score": positive_score,
-        "negative_score": negative_score,
-        "timestamp": timestamp
+        'sentiment': sentiment,
+        'confidence': confidence,
+        'positive_score': positive_score,
+        'negative_score': negative_score,
+        'timestamp': timestamp
     }
 
-@app.get("/api/stats")
+@app.get('/api/stats')
 def get_stats():
     conn = get_db_connection()
     cursor = conn.cursor()
-    
-    cursor.execute("SELECT COUNT(*) FROM predictions")
+    cursor.execute('SELECT COUNT(*) FROM predictions')
     total = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM predictions WHERE sentiment='positive'")
+    cursor.execute(\"SELECT COUNT(*) FROM predictions WHERE sentiment='positive'\")
     positive = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM predictions WHERE sentiment='negative'")
+    cursor.execute(\"SELECT COUNT(*) FROM predictions WHERE sentiment='negative'\")
     negative = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT * FROM predictions ORDER BY id DESC LIMIT 5")
+    cursor.execute('SELECT * FROM predictions ORDER BY id DESC LIMIT 5')
     recent_rows = cursor.fetchall()
     recent = []
     for row in recent_rows:
         recent.append({
-            "id": row["id"],
-            "text": row["text"],
-            "sentiment": row["sentiment"],
-            "confidence": row["confidence"],
-            "timestamp": row["timestamp"]
+            'id': row['id'],
+            'text': row['text'],
+            'sentiment': row['sentiment'],
+            'confidence': row['confidence'],
+            'timestamp': row['timestamp']
         })
-        
     conn.close()
-    
     return {
-        "total_predictions": total,
-        "sentiment_distribution": {
-            "positive": positive,
-            "negative": negative
+        'total_predictions': total,
+        'sentiment_distribution': {
+            'positive': positive,
+            'negative': negative
         },
-        "recent_predictions": recent
+        'recent_predictions': recent
     }

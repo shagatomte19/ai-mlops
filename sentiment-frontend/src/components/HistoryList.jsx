@@ -1,30 +1,124 @@
 import React from 'react';
-import { Clock } from 'lucide-react';
+import { Clock, ThumbsUp, ThumbsDown, Minus } from 'lucide-react';
 
 const HistoryList = ({ history }) => {
-    if (!history || history.length === 0) return null;
+    if (!history || history.length === 0) {
+        return (
+            <div
+                className="glass-card text-center"
+                style={{ padding: '3rem 2rem' }}
+            >
+                <Clock size={48} style={{ color: 'var(--neutral-300)', marginBottom: '1rem' }} />
+                <p style={{ color: 'var(--text-muted)' }}>No predictions yet. Analyze some text to get started!</p>
+            </div>
+        );
+    }
+
+    const getSentimentIcon = (sentiment) => {
+        switch (sentiment) {
+            case 'positive':
+                return <ThumbsUp size={16} />;
+            case 'negative':
+                return <ThumbsDown size={16} />;
+            default:
+                return <Minus size={16} />;
+        }
+    };
+
+    const getSentimentBadgeClass = (sentiment) => {
+        switch (sentiment) {
+            case 'positive':
+                return 'badge-positive';
+            case 'negative':
+                return 'badge-negative';
+            default:
+                return 'badge-neutral';
+        }
+    };
+
+    const formatTime = (timestamp) => {
+        const date = new Date(timestamp);
+        const now = new Date();
+        const diff = now - date;
+
+        if (diff < 60000) return 'Just now';
+        if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+        if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+        return date.toLocaleDateString();
+    };
 
     return (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="p-6 border-b border-gray-100">
-                <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                    <Clock className="w-5 h-5 text-gray-400" />
-                    Recent Predictions
-                </h3>
+        <div className="glass-card" style={{ overflow: 'hidden' }}>
+            <div
+                className="flex items-center justify-between"
+                style={{
+                    padding: '1.25rem 1.5rem',
+                    borderBottom: '1px solid var(--glass-border)',
+                }}
+            >
+                <div className="flex items-center gap-3">
+                    <Clock size={20} style={{ color: 'var(--accent-purple)' }} />
+                    <h3 className="heading-3">Recent Predictions</h3>
+                </div>
+                <span
+                    className="badge"
+                    style={{
+                        background: 'var(--neutral-100)',
+                        color: 'var(--neutral-600)',
+                    }}
+                >
+                    {history.length} items
+                </span>
             </div>
-            <div>
-                {history.map((item) => (
-                    <div key={item.id} className="p-4 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors">
-                        <div className="flex justify-between items-start mb-1">
-                            <span className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wider
-                ${item.sentiment === 'positive' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                {item.sentiment}
+
+            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                {history.map((item, index) => (
+                    <div
+                        key={item.id || index}
+                        className="animate-slide-in"
+                        style={{
+                            padding: '1rem 1.5rem',
+                            borderBottom: index < history.length - 1 ? '1px solid var(--glass-border)' : 'none',
+                            transition: 'background var(--transition-fast)',
+                            animationDelay: `${index * 50}ms`,
+                            cursor: 'pointer',
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--neutral-50)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                        <div className="flex justify-between items-start" style={{ marginBottom: '0.5rem' }}>
+                            <span className={`badge ${getSentimentBadgeClass(item.sentiment)}`}>
+                                {getSentimentIcon(item.sentiment)}
+                                <span>{item.sentiment}</span>
                             </span>
-                            <span className="text-xs text-gray-400">
-                                {new Date(item.timestamp).toLocaleTimeString()}
-                            </span>
+                            <div className="flex items-center gap-3">
+                                <span
+                                    style={{
+                                        fontSize: '0.875rem',
+                                        fontWeight: 600,
+                                        color: 'var(--accent-purple)',
+                                    }}
+                                >
+                                    {(item.confidence * 100).toFixed(0)}%
+                                </span>
+                                <span className="text-small">
+                                    {formatTime(item.timestamp)}
+                                </span>
+                            </div>
                         </div>
-                        <p className="text-gray-700 text-sm line-clamp-2">{item.text}</p>
+                        <p
+                            style={{
+                                color: 'var(--text-secondary)',
+                                fontSize: '0.9375rem',
+                                lineHeight: 1.5,
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                            }}
+                        >
+                            {item.text}
+                        </p>
                     </div>
                 ))}
             </div>

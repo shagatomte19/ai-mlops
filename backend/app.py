@@ -38,8 +38,9 @@ app = FastAPI(lifespan=lifespan)
 # Allow all origins for production environment
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['*'],
-    allow_credentials=False,
+    allow_origins=["http://localhost:3000",
+        "http://localhost:5173",'https://ai-mlops.vercel.app',],
+    allow_credentials=True,
     allow_methods=['*'],
     allow_headers=['*'],
 )

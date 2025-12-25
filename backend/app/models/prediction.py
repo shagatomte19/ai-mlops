@@ -58,7 +58,7 @@ class ModelVersion(Base):
     model_path = Column(String(255), nullable=True)
     vectorizer_path = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=False)
-    metadata = Column(JSON, nullable=True)
+    model_metadata = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     def __repr__(self):

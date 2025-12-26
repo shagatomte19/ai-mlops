@@ -7,6 +7,7 @@ from pydantic import Field
 from functools import lru_cache
 from typing import Optional
 import os
+import secrets
 
 
 class Settings(BaseSettings):
@@ -14,7 +15,7 @@ class Settings(BaseSettings):
     
     # Application
     APP_NAME: str = "SentimentAI"
-    APP_VERSION: str = "2.0.0"
+    APP_VERSION: str = "2.1.0"
     DEBUG: bool = Field(default=False)
     
     # API
@@ -24,6 +25,16 @@ class Settings(BaseSettings):
     SUPABASE_URL: str = Field(default="")
     SUPABASE_KEY: str = Field(default="")
     DATABASE_URL: str = Field(default="")
+    
+    # Security & Authentication
+    SECRET_KEY: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    
+    # Redis (optional - for caching)
+    REDIS_URL: str = Field(default="")
+    CACHE_TTL_SECONDS: int = 3600  # 1 hour
     
     # CORS
     CORS_ORIGINS: list[str] = [
@@ -37,9 +48,19 @@ class Settings(BaseSettings):
     VECTORIZER_PATH: str = "ml/models/vectorizer_v2.pkl"
     MODEL_VERSION: str = "v2.0"
     
+    # MLflow
+    MLFLOW_TRACKING_URI: str = Field(default="sqlite:///mlflow.db")
+    MLFLOW_EXPERIMENT_NAME: str = "sentiment-analysis"
+    
     # Rate Limiting
     RATE_LIMIT_REQUESTS: int = 100
     RATE_LIMIT_WINDOW: int = 60  # seconds
+    RATE_LIMIT_ANONYMOUS: str = "10/minute"
+    RATE_LIMIT_AUTHENTICATED: str = "100/minute"
+    RATE_LIMIT_BATCH: str = "5/hour"
+    
+    # Logging
+    JSON_LOGS: bool = Field(default=False)  # Enable JSON logging for production
     
     class Config:
         env_file = ".env"
@@ -54,3 +75,4 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+

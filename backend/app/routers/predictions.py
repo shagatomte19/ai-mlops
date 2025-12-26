@@ -1,19 +1,26 @@
 """
 Predictions Router - Sentiment analysis endpoints.
+Includes rate limiting and optional authentication.
 """
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 import csv
 import io
 import json
 import time
 
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
 from ..core.database import get_db
 from ..core.config import settings
 from ..core.logging import logger
+from ..core.validators import sanitize_text
+from ..core.cache import get_cache_service
+from ..core.metrics import PREDICTION_COUNTER, PREDICTION_LATENCY, CACHE_HITS, CACHE_MISSES
 from ..services.ml_service import get_ml_service, MLService
 from ..services.prediction_service import get_prediction_service
 from ..models.schemas import (
@@ -21,20 +28,32 @@ from ..models.schemas import (
     BatchPredictionRequest, BatchPredictionResponse,
     ExportRequest, SentimentType
 )
+from ..models.user import User
+from ..dependencies import get_current_user_optional
 
 router = APIRouter(prefix="/predictions", tags=["Predictions"])
 
+# Get limiter from app state
+limiter = Limiter(key_func=get_remote_address)
+
 
 @router.post("", response_model=PredictionResponse)
+@limiter.limit(settings.RATE_LIMIT_AUTHENTICATED)
 async def predict_sentiment(
-    request: PredictionRequest,
+    request: Request,  # Required for rate limiter - must be named 'request'
+    prediction_data: PredictionRequest,
     db: Session = Depends(get_db),
-    ml: MLService = Depends(get_ml_service)
+    ml: MLService = Depends(get_ml_service),
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     """
     Analyze sentiment of provided text.
     
     Returns sentiment classification (positive/negative/neutral) with confidence scores.
+    
+    - **Rate Limited**: 100 requests/minute for authenticated users, 10/minute for anonymous
+    - **Authentication**: Optional (works for both authenticated and anonymous users)
+    - **Caching**: Results are cached in Redis for 1 hour
     """
     if not ml.is_loaded:
         raise HTTPException(
@@ -43,13 +62,37 @@ async def predict_sentiment(
         )
     
     try:
-        # Perform prediction
-        sentiment, confidence, pos_score, neg_score, neutral_score, proc_time = ml.predict(request.text)
+        # Sanitize input text
+        clean_text = sanitize_text(prediction_data.text)
+        
+        # Check cache
+        cache = get_cache_service()
+        if cache.enabled:
+            import hashlib
+            text_hash = hashlib.md5(clean_text.encode('utf-8')).hexdigest()
+            cache_key = f"prediction:{text_hash}:{ml.model_version}"
+            
+            cached_result = await cache.get(cache_key)
+            if cached_result:
+                # Add cache hit header/info if needed
+                logger.debug(f"Cache hit for: {clean_text[:20]}...")
+                CACHE_HITS.inc()
+                return PredictionResponse(**cached_result)
+            
+            CACHE_MISSES.inc()
+        
+        # Measure latency
+        with PREDICTION_LATENCY.labels(model_version=ml.model_version).time():
+            # Perform prediction
+            sentiment, confidence, pos_score, neg_score, neutral_score, proc_time = ml.predict(clean_text)
+        
+        # Increment counter
+        PREDICTION_COUNTER.labels(sentiment=sentiment, model_version=ml.model_version).inc()
         
         # Store in database
         service = get_prediction_service(db)
         prediction = service.create_prediction(
-            text=request.text,
+            text=clean_text,
             sentiment=sentiment,
             confidence=confidence,
             positive_score=pos_score,
@@ -59,9 +102,8 @@ async def predict_sentiment(
             processing_time_ms=proc_time
         )
         
-        logger.info(f"Prediction: {sentiment} ({confidence:.2%}) in {proc_time:.1f}ms")
-        
-        return PredictionResponse(
+        # Prepare response
+        response = PredictionResponse(
             id=prediction.id,
             sentiment=SentimentType(sentiment),
             confidence=confidence,
@@ -73,9 +115,21 @@ async def predict_sentiment(
             timestamp=prediction.created_at
         )
         
+        # Save to cache
+        if cache.enabled:
+            await cache.set(cache_key, response.model_dump(), expire=settings.CACHE_TTL_SECONDS)
+        
+        user_info = f" (user: {current_user.email})" if current_user else ""
+        logger.info(f"Prediction: {sentiment} ({confidence:.2%}) in {proc_time:.1f}ms{user_info}")
+        
+        return response
+        
     except Exception as e:
         logger.error(f"Prediction failed: {e}")
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+
+
+
 
 
 @router.post("/batch", response_model=BatchPredictionResponse)

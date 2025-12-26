@@ -8,11 +8,25 @@ from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import time
 
+# Rate limiting imports
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+# Prometheus metrics
+from prometheus_fastapi_instrumentator import Instrumentator
+
 from .core.config import settings
 from .core.database import init_db
 from .core.logging import setup_logging, logger
+from .core.cache import cache_service
 from .services.ml_service import ml_service
-from .routers import health, predictions, stats
+from .services.scheduler import start_scheduler, stop_scheduler
+from .routers import health, predictions, stats, auth, drift
+
+
+# Rate limiter with remote address as key
+limiter = Limiter(key_func=get_remote_address)
 
 
 @asynccontextmanager
@@ -32,9 +46,15 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("ML models not loaded - predictions will fail")
     
+    # Start scheduler
+    start_scheduler()
+    
     yield
     
     # Shutdown
+    await stop_scheduler()
+    await cache_service.close()
+    logger.info("Cache connection closed")
     logger.info("Application shutting down")
 
 
@@ -53,6 +73,13 @@ app = FastAPI(
     - ✅ Analytics dashboard data
     - ✅ Trend analysis and visualization data
     - ✅ Export functionality (JSON/CSV)
+    - ✅ JWT Authentication
+    - ✅ Rate Limiting
+    - ✅ Redis Caching
+    - ✅ Drift Detection (MLOps)
+    
+    ## Authentication
+    Most endpoints require JWT authentication. Get a token via `/api/v1/auth/login`.
     
     ## Sentiment Classes
     - **Positive**: High confidence positive sentiment
@@ -64,6 +91,12 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan
 )
+
+# Add rate limiter to app state
+app.state.limiter = limiter
+
+# Rate limit exceeded handler
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 # CORS Middleware
@@ -96,10 +129,17 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
+# Prometheus metrics instrumentation
+Instrumentator().instrument(app).expose(app, endpoint="/metrics")
+
+
 # Register routers with API versioning
+app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
 app.include_router(health.router, prefix=settings.API_V1_PREFIX)
 app.include_router(predictions.router, prefix=settings.API_V1_PREFIX)
 app.include_router(stats.router, prefix=settings.API_V1_PREFIX)
+app.include_router(drift.router, prefix=settings.API_V1_PREFIX)
+
 
 
 # Legacy endpoints for backward compatibility
@@ -130,6 +170,9 @@ async def root():
         "version": settings.APP_VERSION,
         "docs": "/docs",
         "health": f"{settings.API_V1_PREFIX}/health",
+        "auth": f"{settings.API_V1_PREFIX}/auth",
         "predict": f"{settings.API_V1_PREFIX}/predictions",
         "stats": f"{settings.API_V1_PREFIX}/stats",
+        "metrics": "/metrics",
     }
+

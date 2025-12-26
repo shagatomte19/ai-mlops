@@ -1,46 +1,82 @@
+```
 """
 Health Check Router - System health and status endpoints.
 """
-from fastapi import APIRouter, Depends
+from typing import Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-import time
 
 from ..core.database import get_db
-from ..core.config import settings
+from ..core.cache import get_cache_service
 from ..services.ml_service import get_ml_service, MLService
-from ..models.schemas import HealthResponse, ModelInfoResponse
+from ..models.schemas import ModelInfoResponse
 
 router = APIRouter(prefix="/health", tags=["Health"])
 
-# Track startup time
-_start_time = time.time()
+
+@router.get("", status_code=status.HTTP_200_OK)
+async def health_check():
+    """Basic container health check."""
+    return {"status": "ok"}
 
 
-@router.get("", response_model=HealthResponse)
-async def health_check(
+@router.get("/ready", status_code=status.HTTP_200_OK)
+async def readiness_check(
     db: Session = Depends(get_db),
     ml: MLService = Depends(get_ml_service)
-):
+) -> Dict[str, Any]:
     """
-    System health check endpoint.
-    Returns status of all system components.
+    Readiness probe with component status checks.
+    Checks: Database, Redis, ML Model.
     """
-    # Check database connection
-    db_connected = False
+    status_report = {
+        "status": "ready",
+        "components": {
+            "database": "unknown",
+            "redis": "unknown",
+            "ml_model": "unknown"
+        }
+    }
+    
+    # Check Database
     try:
         db.execute(text("SELECT 1"))
-        db_connected = True
-    except Exception:
-        pass
-    
-    return HealthResponse(
-        status="healthy" if (db_connected and ml.is_loaded) else "degraded",
-        version=settings.APP_VERSION,
-        model_loaded=ml.is_loaded,
-        database_connected=db_connected,
-        uptime_seconds=time.time() - _start_time
-    )
+        status_report["components"]["database"] = "up"
+    except Exception as e:
+        status_report["components"]["database"] = f"down: {str(e)}"
+        status_report["status"] = "not_ready"
+
+    # Check Redis
+    try:
+        cache = get_cache_service()
+        if cache.enabled:
+            # Simple set/get check or ping
+            if await cache.set("health_check", "ok", expire=5):
+                status_report["components"]["redis"] = "up"
+            else:
+                status_report["components"]["redis"] = "error"
+        else:
+            status_report["components"]["redis"] = "disabled"
+    except Exception as e:
+        status_report["components"]["redis"] = f"down: {str(e)}"
+        # Redis optional, don't fail readiness? Or fail if critical?
+        # Assuming optional for now
+
+    # Check ML Model
+    if ml.is_loaded:
+        status_report["components"]["ml_model"] = "up"
+    else:
+        status_report["components"]["ml_model"] = "down"
+        status_report["status"] = "not_ready"
+
+    if status_report["status"] != "ready":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=status_report
+        )
+        
+    return status_report
 
 
 @router.get("/model", response_model=ModelInfoResponse)

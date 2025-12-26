@@ -20,7 +20,9 @@
 ### 🧠 Machine Learning
 - **5000+ Training Samples** with diverse vocabulary and templates
 - **Binary + Neutral Classification** via confidence thresholds
-- **Model Versioning** with metrics tracking (accuracy, precision, recall, F1)
+- **Model Versioning** with MLflow Registry
+- **Drift Detection** with Evidently
+- **Automated Retraining** pipeline via APScheduler
 - **Cross-Validation** for robust model evaluation
 
 ### 🚀 API Capabilities
@@ -29,6 +31,9 @@
 - **CSV File Upload** for bulk analysis
 - **Export Functionality** (JSON/CSV)
 - **RESTful API** with versioning (`/api/v1/`)
+- **JWT Authentication** for secure access
+- **Rate Limiting** (SlowAPI) to prevent abuse
+- **Redis Caching** for high performance
 
 ### 🎨 Premium SaaS UI
 - **Dynamic Typing Effect** - Animated hero text using react-type-animation
@@ -43,10 +48,12 @@
 
 ### 🔧 Production Ready
 - **Supabase PostgreSQL** integration
-- **SQLAlchemy ORM** with proper models
-- **Structured Logging** with Loguru
+- **SQLAlchemy ORM** with Alembic migrations
+- **Structured Logging** with `python-json-logger`
 - **Environment Configuration** via Pydantic Settings
+- **Prometheus Metrics** via `prometheus-fastapi-instrumentator`
 - **Health Check Endpoints** for monitoring
+- **Input Sanitization** with Bleach
 
 ---
 
@@ -83,20 +90,32 @@ graph TB
     
     subgraph Backend["Backend (FastAPI)"]
         API[REST API v1]
+        Auth[Auth & Security]
         Services[Business Logic]
         ML[ML Service]
+        Cache[Redis Cache]
+    end
+    
+    subgraph MLOps
+        MLflow[MLflow Registry]
+        Evidently[Drift Detection]
+        Scheduler[Retraining Job]
     end
     
     subgraph Data["Data Layer"]
         PG[(Supabase PostgreSQL)]
-        Models[Model Artifacts]
+        Prometheus[Prometheus Metrics]
     end
     
     UI --> API
+    API --> Auth
     API --> Services
+    Services --> Cache
     Services --> ML
     Services --> PG
-    ML --> Models
+    ML --> MLflow
+    ML --> Evidently
+    Scheduler --> ML
 ```
 
 ### Directory Structure

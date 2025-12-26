@@ -39,6 +39,7 @@ mlflow>=2.9.2
 evidently>=0.4.11
 redis>=5.0.1
 apscheduler>=3.10.4
+celery[redis]>=5.3.0
 
 # Phase 5: Testing
 pytest>=7.4.0

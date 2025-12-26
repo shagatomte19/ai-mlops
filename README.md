@@ -161,6 +161,65 @@ ai-mlops/
 
 ---
 
+## 🔄 CI/CD Pipeline
+
+### GitHub Actions
+- **Backend CI**: Lint (Black/Flake8), Test (pytest), Build verification
+- **Frontend CI**: ESLint, Production build
+
+### Pre-commit Hooks
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+---
+
+## 🧪 Testing
+
+### Run Integration Tests
+```bash
+cd backend
+pytest tests/ -v --cov=app
+```
+
+### Run Load Tests
+```bash
+locust -f tests/load/locustfile.py --host=http://localhost:8000
+```
+
+---
+
+## ⚡ Background Tasks (Celery)
+
+### Start Worker
+```bash
+celery -A app.tasks.celery_app worker --loglevel=info
+```
+
+### Start Scheduler
+```bash
+celery -A app.tasks.celery_app beat --loglevel=info
+```
+
+### Available Tasks
+- `process_batch` - Async batch prediction
+- `check_drift` - Daily drift detection
+- `create_analytics_snapshot` - Hourly analytics
+- `retrain_model` - On-demand retraining
+
+---
+
+## 📚 Documentation
+
+- [Usage Instructions](./USAGE_INSTRUCTIONS.md) - Complete API usage guide
+- [Deployment Runbook](./docs/runbooks/deployment.md)
+- [Incident Response](./docs/runbooks/incident-response.md)
+- [Model Retraining](./docs/runbooks/model-retraining.md)
+
+
+---
+
 ## 🚀 Quick Start
 
 ### Prerequisites
